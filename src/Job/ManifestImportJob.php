@@ -47,9 +47,12 @@ class ManifestImportJob extends AbstractJob {
         $logger->err(sprintf('[IiifBulkImport] Fetch failed: %s', $e->getMessage()));
         continue;
       }
-      $label = $this->extractLabel($manifest) ?: $url;
+      // The label is text like every other value taken from the manifest.
+      $label = $this->stripTags($this->extractLabel($manifest)) ?: $url;
       // Extract IIIF Image API info.json URLs from canvases.
       $canvasImageInfoUrls = $this->extractIiifCanvasImageUrls($manifest);
+      // These addresses come from the manifest, not from the administrator.
+      $canvasImageInfoUrls = $this->filterFetchableUrls($canvasImageInfoUrls, $url);
       // Optional safety: skip extremely large originals.
       $canvasImageInfoUrls = $this->filterOversizeIiifImages($canvasImageInfoUrls);
 
@@ -256,6 +259,79 @@ class ManifestImportJob extends AbstractJob {
       }
     }
     return $out;
+  }
+
+  /**
+   * Drop image URLs that this server should not be told to fetch.
+   */
+  protected function filterFetchableUrls(array $urls, string $manifestUrl): array {
+    $manifestHost = strtolower((string) parse_url($manifestUrl, PHP_URL_HOST));
+    $out = [];
+    $refused = [];
+    foreach ($urls as $u) {
+      if ($this->isFetchAllowed($u, $manifestHost)) {
+        $out[] = $u;
+      }
+      else {
+        $refused[] = $u;
+      }
+    }
+    if ($refused) {
+      $this->getServiceLocator()->get('Omeka\\Logger')->warn(sprintf(
+        '[IiifBulkImport] Skipped %d image URL(s) that are not http(s) or point to an internal address (showing up to 5) :: %s',
+        count($refused),
+        implode(', ', array_slice($refused, 0, 5))
+      ));
+    }
+    return $out;
+  }
+
+  /**
+   * Whether a URL taken from a manifest may be fetched by this server.
+   *
+   * The administrator chose the manifest's own host. Any other host is the
+   * manifest's choice, so one that resolves to a loopback, private or
+   * link-local address is refused: otherwise the manifest would decide which
+   * internal services this server talks to. A public host that redirects to an
+   * internal one is not caught here, because the ingesters follow redirects on
+   * their own.
+   */
+  protected function isFetchAllowed(string $url, string $manifestHost): bool {
+    $parts = parse_url($url);
+    if (!is_array($parts)) {
+      return FALSE;
+    }
+    $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+    $host = strtolower(trim((string) ($parts['host'] ?? ''), '[]'));
+    if (!in_array($scheme, ['http', 'https'], TRUE) || $host === '') {
+      return FALSE;
+    }
+    if ($host === $manifestHost) {
+      return TRUE;
+    }
+    $addresses = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : $this->resolveHost($host);
+    if (!$addresses) {
+      return FALSE;
+    }
+    foreach ($addresses as $address) {
+      if (!filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+        return FALSE;
+      }
+    }
+    return TRUE;
+  }
+
+  /**
+   * Resolve a host name to its IPv4 and IPv6 addresses.
+   */
+  protected function resolveHost(string $host): array {
+    $addresses = @gethostbynamel($host) ?: [];
+    foreach (@dns_get_record($host, DNS_AAAA) ?: [] as $record) {
+      if (!empty($record['ipv6'])) {
+        $addresses[] = $record['ipv6'];
+      }
+    }
+    return array_values(array_unique($addresses));
   }
 
   /**
@@ -575,7 +651,7 @@ class ManifestImportJob extends AbstractJob {
             $svcs = isset($svc[0]) ? $svc : [$svc];
             foreach ($svcs as $s) {
               $id = $s['id'] ?? ($s['@id'] ?? NULL);
-              if ($id) {
+              if (is_string($id) && $id !== '') {
                 $urls[] = rtrim($id, '/') . '/info.json';
               }
             }
@@ -604,7 +680,7 @@ class ManifestImportJob extends AbstractJob {
         continue;
       }
       $id = $svc['@id'] ?? ($svc['id'] ?? NULL);
-      if ($id) {
+      if (is_string($id) && $id !== '') {
         $urls[] = rtrim($id, '/') . '/info.json';
       }
     }
@@ -905,7 +981,8 @@ class ManifestImportJob extends AbstractJob {
     $homes = isset($hp[0]) ? $hp : [$hp];
     foreach ($homes as $h) {
       $id = $h['id'] ?? ($h['@id'] ?? NULL);
-      if ($id) {
+      // Stored as a link on the item page, so only web addresses are taken.
+      if (is_string($id) && $this->looksLikeUrl($id)) {
         $uris[] = $id;
       }
     }
@@ -924,7 +1001,7 @@ class ManifestImportJob extends AbstractJob {
     $list = isset($sa[0]) ? $sa : [$sa];
     foreach ($list as $s) {
       $id = $s['id'] ?? ($s['@id'] ?? NULL);
-      if ($id) {
+      if (is_string($id) && $this->looksLikeUrl($id)) {
         $uris[] = $id;
       }
     }

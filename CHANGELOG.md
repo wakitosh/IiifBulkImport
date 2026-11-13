@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.2.1 - 2026-11-13
+
+### English
+
+- **Security**:
+  - The manifest label is now stripped of markup before it becomes the item title, like the other values taken from a manifest.
+  - `homepage` and `seeAlso` addresses are stored as links only when they are `http` or `https` URLs. Other schemes were stored as they were and could end up as a script link on the item page.
+  - Image service addresses listed in a manifest are no longer fetched when they are not `http`/`https`, or when their host is not the manifest's own host and resolves to a loopback, private or link-local address. Skipped addresses are reported in the job log. A public host that redirects to an internal one is not detected, so manifests should still come from sources you trust.
+  - The import page is now closed to the `site_admin` role. It was meant for global administrators only, but Omeka grants `site_admin` every permission unless one is denied explicitly.
+- **Bug Fixes**:
+  - A service entry whose id is not a string no longer stops the job.
+  - `module.ini` carried an old version number; it now matches the release.
+
+### 日本語
+
+- **セキュリティ**:
+  - マニフェストの label を、マニフェストから取り込む他の値と同様に、マークアップを取り除いてからアイテムのタイトルにするようにしました。
+  - `homepage` と `seeAlso` のアドレスは、`http` または `https` の URL の場合だけリンクとして保存します。従来は他のスキームもそのまま保存され、アイテムページでスクリプトのリンクになる可能性がありました。
+  - マニフェストに書かれた画像サービスのアドレスは、`http`/`https` 以外の場合、またはホストがマニフェスト自身のホストと異なり、ループバック、プライベート、リンクローカルのアドレスに解決される場合は取得しません。取得しなかったアドレスはジョブログに記録します。内部アドレスへリダイレクトする公開ホストは検出できないため、マニフェストは引き続き信頼できる提供元のものを使ってください。
+  - インポート画面を `site_admin` ロールでは開けないようにしました。全体管理者だけを想定していましたが、Omeka は明示的に拒否しない限り `site_admin` にすべての権限を与えます。
+- **バグ修正**:
+  - id が文字列でない service があってもジョブが止まらないようにしました。
+  - `module.ini` のバージョン番号が古いままだったため、リリースと一致させました。
+
 ## v0.2.0 - 2025-09-06
 
 ### English

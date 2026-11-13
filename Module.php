@@ -36,6 +36,9 @@ class Module extends AbstractModule {
     }
     // Allow global administrators to access this controller.
     $acl->allow('global_admin', $resource);
+    // Omeka grants site_admin everything by default, so allowing only
+    // global_admin above does not keep site_admin out.
+    $acl->deny('site_admin', $resource);
   }
 
   /**
